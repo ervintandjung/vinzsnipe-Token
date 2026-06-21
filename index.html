@@ -230,7 +230,7 @@
     <div class="hero">
       <div>
         <h1>Token Solana baru, live dari Pump.fun</h1>
-        <p>Mendeteksi token baru langsung dari on-chain log program Pump.fun lewat WebSocket Solana RPC, plus data harga/liquidity Dexscreener begitu token punya pool. Hubungkan Phantom untuk lihat saldo &amp; siap transaksi.</p>
+        <p>Mendeteksi token baru langsung via WebSocket PumpPortal (real-time, tanpa API key), plus data harga/liquidity Dexscreener begitu token punya pool. Hubungkan Phantom untuk lihat saldo &amp; siap transaksi.</p>
       </div>
       <div class="controls">
         <label class="wl-filter"><input type="checkbox" id="wlOnly"> watchlist aja</label>
@@ -285,9 +285,8 @@
     </div>
 
     <footer>
-      Catatan: feed live ini berjalan langsung dari browser kamu via WebSocket ke Solana RPC (logsSubscribe ke program Pump.fun) — tidak ada server perantara.
-      Default RPC sudah dipasang ke Helius sesuai yang kamu kasih. Karena ini file client-side, key tersebut akan terlihat siapa saja yang melihat source/network tab kalau web ini dipublikasikan — kalau mau publik, pakai key khusus dengan rate-limit dibatasi di dashboard Helius.
-      Data harga & liquidity diambil dari API publik Dexscreener — token yang masih di bonding curve Pump.fun (belum migrasi ke Raydium) belum akan punya data ini, chart-nya pun belum tersedia di Dexscreener.
+      Catatan: feed live ini menggunakan WebSocket PumpPortal (pumpportal.fun/api/data) yang khusus nge-track event token baru Pump.fun — tidak perlu API key & lebih reliable dibanding raw RPC.
+      Data harga & liquidity diambil dari API publik Dexscreener (endpoint v1) — token yang masih di bonding curve Pump.fun (belum migrasi ke PumpSwap/Raydium) belum akan punya data ini.
       Fitur Buy/Sell membangun transaksi lewat API publik PumpPortal (pihak ketiga, bukan afiliasi Anthropic) dan menandatanganinya lewat Phantom kamu sendiri — non-custodial. Selalu periksa detail transaksi di popup Phantom sebelum approve, dan coba nominal kecil dulu.
       Parsing event Pump.fun dibuat manual berdasar struktur program publiknya; jika Pump.fun mengubah programnya, parsing perlu di-update.
     </footer>
@@ -677,23 +676,33 @@ async function fetchSafety(tok){
 }
 
 async function tryFetchDex(tok){
-  try{
-    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tok.mint}`);
-    if(!res.ok) return;
-    const data = await res.json();
-    const pair = data?.pairs?.[0];
-    if(pair){
-      tok.dex = {
-        priceUsd: pair.priceUsd,
-        liquidity: pair.liquidity?.usd || 0,
-        vol24: pair.volume?.h24 || 0,
-        change24: pair.priceChange?.h24 || 0,
-      };
-      statDex.textContent = state.tokens.filter(t=>t.dex).length;
-      renderTokens();
-      saveTokens();
-    }
-  }catch(e){ /* silently ignore - no pool yet or network hiccup */ }
+  // Coba endpoint baru dexscreener v1, fallback ke endpoint lama
+  const endpoints = [
+    `https://api.dexscreener.com/tokens/v1/solana/${tok.mint}`,
+    `https://api.dexscreener.com/latest/dex/tokens/${tok.mint}`,
+  ];
+  for(const url of endpoints){
+    try{
+      const res = await fetch(url);
+      if(!res.ok) continue;
+      const data = await res.json();
+      const pairs = data?.pairs || data?.schemaVersion && data?.pairs;
+      const pair = Array.isArray(pairs) ? pairs[0] : null;
+      if(pair){
+        tok.dex = {
+          priceUsd: pair.priceUsd,
+          liquidity: pair.liquidity?.usd || 0,
+          vol24: pair.volume?.h24 || 0,
+          change24: pair.priceChange?.h24 || 0,
+          pairAddress: pair.pairAddress || null,
+        };
+        statDex.textContent = state.tokens.filter(t=>t.dex).length;
+        renderTokens();
+        saveTokens();
+        return; // berhasil, stop coba endpoint berikutnya
+      }
+    }catch(e){ /* lanjut ke endpoint berikutnya */ }
+  }
 }
 
 // Periodically refresh dex + safety data for tokens that don't have it yet
@@ -702,28 +711,28 @@ setInterval(()=>{
   state.tokens.filter(t=>!t.safety).slice(0,10).forEach(fetchSafety);
 }, 15000);
 
-// ---------- WebSocket feed ----------
+// ---------- WebSocket feed (via PumpPortal — dedicated pump.fun event stream) ----------
+const PUMPPORTAL_WSS = "wss://pumpportal.fun/api/data";
+
 function connectFeed(){
   if(state.ws){ try{ state.ws.close(); }catch(e){} }
-  setFeedStatus("connecting","connecting");
+  setFeedStatus("connecting","connecting...");
   let ws;
   try{
-    ws = new WebSocket(DEFAULT_RPC_WSS);
+    ws = new WebSocket(PUMPPORTAL_WSS);
   }catch(e){
-    setFeedStatus("err","invalid url");
+    setFeedStatus("err","gagal buka WebSocket");
     return;
   }
   state.ws = ws;
 
   ws.onopen = ()=>{
-    setFeedStatus("live","live");
+    setFeedStatus("live","live · PumpPortal");
     state.reconnectDelay = 4000;
     state.debug.connectedAt = Date.now();
     state.debug.lastError = null;
-    ws.send(JSON.stringify({
-      jsonrpc:"2.0", id:1, method:"logsSubscribe",
-      params:[ {mentions:[PUMPFUN_PROGRAM]}, {commitment:"confirmed"} ]
-    }));
+    // Subscribe ke new token events dari PumpPortal
+    ws.send(JSON.stringify({ method: "subscribeNewToken" }));
     updateDebugLine();
   };
 
@@ -732,44 +741,42 @@ function connectFeed(){
     try{ msg = JSON.parse(ev.data); }catch(e){ return; }
     state.debug.msgCount++;
 
-    if(msg.id === 1 && msg.result !== undefined){
-      state.debug.subId = msg.result;
-      updateDebugLine();
-      return;
-    }
+    // PumpPortal kirim error jika ada
     if(msg.error){
-      state.debug.lastError = JSON.stringify(msg.error);
+      state.debug.lastError = typeof msg.error === "string" ? msg.error : JSON.stringify(msg.error);
       updateDebugLine();
       return;
     }
 
-    const logs = msg?.params?.result?.value?.logs;
-    if(!logs) return;
-    state.debug.logMsgCount++;
-    state.debug.lastLogAt = Date.now();
-
-    const isCreate = logs.some(l=> l.includes("Instruction: Create") || l.includes("Program log: Instruction: Create"));
-    if(!isCreate){ updateDebugLine(); return; }
-    const dataLine = logs.find(l=> l.startsWith("Program data:"));
-    if(!dataLine){ updateDebugLine(); return; }
-    const b64 = dataLine.replace("Program data:","").trim();
-    let bytes;
-    try{ bytes = b64ToBytes(b64); }catch(e){ updateDebugLine(); return; }
-    const decoded = decodeCreateEvent(bytes);
-    if(decoded && decoded.mint){
+    // PumpPortal langsung kirim token baru tanpa perlu decode bytes
+    // txType === "create" = token baru di-launch di Pump.fun
+    if(msg.txType === "create" && msg.mint){
+      state.debug.logMsgCount++;
+      state.debug.lastLogAt = Date.now();
       state.debug.createMsgCount++;
-      pushToken(decoded);
+      pushToken({
+        name:   msg.name   || "Unknown",
+        symbol: msg.symbol || "?",
+        uri:    msg.uri    || "",
+        mint:   msg.mint,
+        sig:    msg.signature || null,
+        marketCapSol: msg.marketCapSol || 0,
+      });
+    } else if(msg.mint || msg.signature){
+      // pesan lain dari portal (trade, dll), hitung aja buat debug
+      state.debug.logMsgCount++;
+      state.debug.lastLogAt = Date.now();
     }
     updateDebugLine();
   };
 
-  ws.onerror = ()=>{
+  ws.onerror = (e)=>{
     setFeedStatus("err","error");
-    state.debug.lastError = "WebSocket error (lihat console browser buat detail)";
+    state.debug.lastError = "WebSocket error — cek console browser";
     updateDebugLine();
   };
   ws.onclose = ()=>{
-    setFeedStatus("err",`disconnected — retry in ${Math.round(state.reconnectDelay/1000)}s`);
+    setFeedStatus("err",`disconnected — retry ${Math.round(state.reconnectDelay/1000)}s`);
     setTimeout(connectFeed, state.reconnectDelay);
     state.reconnectDelay = Math.min(state.reconnectDelay * 1.7, 30000);
   };
@@ -781,13 +788,12 @@ function updateDebugLine(){
   if(!el) return;
   const connSecs = d.connectedAt ? Math.floor((Date.now()-d.connectedAt)/1000) : 0;
   const lastLog = d.lastLogAt ? Math.floor((Date.now()-d.lastLogAt)/1000)+"s lalu" : "belum ada";
-  let html = `terhubung ${connSecs}s · pesan diterima: ${d.msgCount} · pesan log pump.fun: ${d.logMsgCount} · create terdeteksi: ${d.createMsgCount} · log terakhir: ${lastLog}`;
-  if(d.subId) html += ` · subscription #${d.subId}`;
+  let html = `[PumpPortal WSS] terhubung ${connSecs}s · pesan diterima: ${d.msgCount} · event pump.fun: ${d.logMsgCount} · create terdeteksi: ${d.createMsgCount} · terakhir: ${lastLog}`;
   if(d.lastError) html += `<br><span style="color:var(--red)">error: ${escapeHtml(d.lastError)}</span>`;
-  if(d.connectedAt && connSecs > 30 && d.logMsgCount === 0){
-    html += `<br><span style="color:var(--red)">⚠ udah ${connSecs}s konek tapi belum ada satu pun log dari program Pump.fun masuk — kemungkinan RPC ini lagi limit/bermasalah. Coba refresh halaman beberapa saat lagi.</span>`;
-  } else if(d.logMsgCount > 0 && d.createMsgCount === 0 && d.logMsgCount > 20){
-    html += `<br><span style="color:var(--purple)">log pump.fun masuk tapi belum ada yang ke-decode jadi token — kemungkinan format event-nya berubah, parsing perlu diupdate.</span>`;
+  if(d.connectedAt && connSecs > 45 && d.createMsgCount === 0 && d.msgCount === 0){
+    html += `<br><span style="color:var(--red)">⚠ ${connSecs}s terkonek tapi 0 pesan masuk — cek koneksi internet / coba refresh.</span>`;
+  } else if(d.connectedAt && connSecs > 10 && d.msgCount === 0){
+    html += `<br><span style="color:var(--muted)">Menunggu event pertama dari PumpPortal... (pump.fun kadang sepi di jam tertentu)</span>`;
   }
   el.innerHTML = html;
 }
