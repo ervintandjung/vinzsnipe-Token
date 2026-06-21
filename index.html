@@ -207,8 +207,8 @@
   .list-dot.risk{ background:var(--red); box-shadow:0 0 5px var(--red);}
   .list-dot.pending{ background:var(--muted);}
   .list-sub-row{ display:flex; align-items:center; gap:9px; font-size:11px; color:var(--muted); font-family:var(--mono); margin-top:2px;}
-  .list-sub-row .ic{ cursor:pointer; }
-  .list-sub-row .ic:hover{ color:var(--green); }
+  .list-sub-row .ic{ cursor:pointer; padding:4px 6px; margin:-4px -2px; border-radius:5px; }
+  .list-sub-row .ic:hover, .list-sub-row .ic:active{ color:var(--green); background:var(--panel2); }
   .list-numbers{ text-align:right; }
   .list-price{ font-family:var(--mono); font-weight:700; font-size:14px; padding:2px 5px; border-radius:5px; display:inline-block;}
   .list-price.flash-up{ background:rgba(61,255,160,0.18); color:var(--green);}
@@ -526,7 +526,7 @@ function isRisky(t){
 
 function fmtAge(ts){
   const s = Math.floor((Date.now()-ts)/1000);
-  if(s<60) return s+"d"; // detik
+  if(s<60) return s+"s"; // detik
   if(s<3600) return Math.floor(s/60)+"m";
   if(s<86400) return Math.floor(s/3600)+"h";
   if(s<86400*30) return Math.floor(s/86400)+"hr"; // hari
@@ -583,6 +583,19 @@ function renderTokens(){
   const { list, wlOnly } = getFilteredSortedList();
   if(state.viewMode === "table") renderTableRows(list, wlOnly);
   else renderListRows(list, wlOnly);
+}
+
+// Background data (dex price refresh, safety checks, batched fetches) used to call
+// renderTokens() immediately on every completion, which replaces the whole list's
+// innerHTML. On mobile this meant a tap could land on a row that got swapped out for a
+// freshly-built element mid-touch, so the tap silently did nothing — needing several
+// retries before one landed between refreshes. scheduleRender() coalesces those background
+// calls into at most one re-render per ~250ms instead of firing immediately every time.
+let _renderPending = false;
+function scheduleRender(){
+  if(_renderPending) return;
+  _renderPending = true;
+  setTimeout(()=>{ _renderPending = false; renderTokens(); }, 250);
 }
 
 function renderTableRows(list, wlOnly){
@@ -652,7 +665,7 @@ function renderListRows(list, wlOnly){
 
     return `<div class="list-row" onclick="openChart('${t.mint}','${escapeHtml(sym)}')">
       <button class="list-star ${watched?'active':''}" onclick="event.stopPropagation(); toggleWatch('${t.mint}')">${watched?'★':'☆'}</button>
-      <div class="list-avatar" style="background:${avatarColor(t.mint)}">${initials}</div>
+      <div class="list-avatar" style="background:${avatarColor(t.mint)}; overflow:hidden;">${t.image ? `<img src="${t.image}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.textContent='${initials}';">` : initials}</div>
       <div class="list-info">
         <div class="list-name-row">
           <span class="list-dot ${dotClass}" title="${t.safety ? (isRisky(t)?'ada sinyal resiko':'mint & freeze sudah revoked') : 'mengecek...'}"></span>
@@ -682,6 +695,30 @@ function escapeHtml(s){
   return (s||"").replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Pump.fun's on-chain Create event only gives us a metadata `uri` (usually an IPFS link to a
+// JSON file), not the logo image itself. Previously that uri was decoded but never used, so
+// every token just showed a plain colored circle with initials. This fetches that JSON and
+// pulls out the actual `image` field so real token logos can be shown.
+function resolveMetaUrl(url){
+  if(!url) return null;
+  if(url.startsWith("ipfs://")) return "https://ipfs.io/ipfs/" + url.slice(7);
+  return url;
+}
+async function fetchTokenImage(tok){
+  if(!tok.uri) return;
+  try{
+    const metaUrl = resolveMetaUrl(tok.uri);
+    const res = await fetch(metaUrl);
+    if(!res.ok) return;
+    const meta = await res.json();
+    const img = resolveMetaUrl(meta?.image);
+    if(img){
+      tok.image = img;
+      scheduleRender();
+    }
+  }catch(e){ /* metadata host down / not JSON / CORS-blocked — fall back to initials avatar */ }
+}
+
 function pushToken(tok){
   tok.ts = Date.now();
   tok._new = true;
@@ -690,11 +727,12 @@ function pushToken(tok){
   if(state.tokens.length > 200) state.tokens.pop();
   statCount.textContent = state.tokens.length;
   tickerStrip.innerHTML = state.tokens.slice(0,30).map(t=>`<span class="new">$${escapeHtml(t.symbol||'?')}</span> ${escapeHtml(t.name||'')} ${shortAddr(t.mint)}`).join('&nbsp;&nbsp;•&nbsp;&nbsp;') + state.tokens.slice(0,30).map(t=>`<span class="new">$${escapeHtml(t.symbol||'?')}</span> ${escapeHtml(t.name||'')} ${shortAddr(t.mint)}`).join('&nbsp;&nbsp;•&nbsp;&nbsp;');
-  renderTokens();
+  scheduleRender();
   saveTokens();
   setTimeout(()=>{ tok._new = false; }, 1600);
   tryFetchDex(tok);
   fetchSafety(tok);
+  fetchTokenImage(tok);
   if(state.alertOn) fireAlert(tok);
 }
 
@@ -741,7 +779,7 @@ async function fetchSafety(tok){
     const mintAuthOption = bytes[0] | (bytes[1]<<8) | (bytes[2]<<16) | (bytes[3]<<24);
     const freezeAuthOption = bytes[46] | (bytes[47]<<8) | (bytes[48]<<16) | (bytes[49]<<24);
     tok.safety = { mintRevoked: mintAuthOption === 0, freezeRevoked: freezeAuthOption === 0 };
-    renderTokens();
+    scheduleRender();
   }catch(e){ /* leave as pending */ }
 }
 
@@ -759,17 +797,56 @@ async function tryFetchDex(tok){
         change24: pair.priceChange?.h24 || 0,
       };
       statDex.textContent = state.tokens.filter(t=>t.dex).length;
-      renderTokens();
+      scheduleRender();
       saveTokens();
     }
   }catch(e){ /* silently ignore - no pool yet or network hiccup */ }
 }
 
-// Periodically refresh dex + safety data for tokens that don't have it yet
+// Refresh price/liquidity for a batch of mints in one request (Dexscreener accepts up to 30
+// comma-separated addresses per call), so prices for tokens that already have a Dexscreener
+// pool keep updating live instead of only being fetched once and cached forever.
+async function refreshDexBatch(toks){
+  if(toks.length === 0) return;
+  try{
+    const addrs = toks.map(t=>t.mint).join(",");
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${addrs}`);
+    if(!res.ok) return;
+    const data = await res.json();
+    const pairs = data?.pairs || [];
+    let changed = false;
+    for(const tok of toks){
+      const pair = pairs.find(p=>p.baseToken?.address === tok.mint);
+      if(pair){
+        tok.dex = {
+          priceUsd: pair.priceUsd,
+          liquidity: pair.liquidity?.usd || 0,
+          vol24: pair.volume?.h24 || 0,
+          change24: pair.priceChange?.h24 || 0,
+        };
+        changed = true;
+      }
+    }
+    if(changed){
+      statDex.textContent = state.tokens.filter(t=>t.dex).length;
+      scheduleRender();
+      saveTokens();
+    }
+  }catch(e){ /* network hiccup — next interval will retry */ }
+}
+
+// Periodically refresh dex + safety data. Tokens missing dex data entirely are checked
+// individually (a pool may have just appeared); tokens that already have dex data are
+// re-fetched in batches so their price/liquidity/24h-change stay in sync with Dexscreener
+// instead of freezing at whatever the first fetch returned.
 setInterval(()=>{
   state.tokens.filter(t=>!t.dex).slice(0,10).forEach(tryFetchDex);
   state.tokens.filter(t=>!t.safety).slice(0,10).forEach(fetchSafety);
-}, 15000);
+  const withDex = state.tokens.filter(t=>t.dex).slice(0,30);
+  for(let i=0;i<withDex.length;i+=30){
+    refreshDexBatch(withDex.slice(i,i+30));
+  }
+}, 12000);
 
 // ---------- WebSocket feed ----------
 function connectFeed(){
@@ -1257,6 +1334,14 @@ statCount.textContent = state.tokens.length;
 statDex.textContent = state.tokens.filter(t=>t.dex).length;
 renderTokens();
 connectFeed();
+// Tokens restored from localStorage may be hours old with stale cached prices —
+// refresh them right away instead of waiting for the first 12s interval tick.
+(function refreshCacheOnBoot(){
+  const withDex = state.tokens.filter(t=>t.dex);
+  for(let i=0;i<withDex.length;i+=30) refreshDexBatch(withDex.slice(i,i+30));
+  state.tokens.filter(t=>!t.dex).slice(0,15).forEach(tryFetchDex);
+  state.tokens.filter(t=>!t.safety).slice(0,15).forEach(fetchSafety);
+})();
 </script>
   <div class="modal-bg" id="tradeModalBg">
     <div class="modal wide">
