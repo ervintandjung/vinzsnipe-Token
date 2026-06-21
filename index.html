@@ -144,6 +144,30 @@
   .chart-modal iframe{ flex:1; border:none; width:100%;}
   .chart-empty{ flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:10px; padding:30px; text-align:center; color:var(--muted); font-family:var(--mono); font-size:12px;}
 
+  .detail-tabs{ display:flex; gap:6px; padding:10px 18px 0; border-bottom:1px solid var(--line);}
+  .detail-tab{ background:none; border:none; color:var(--muted); font-family:var(--mono); font-size:12px; padding:8px 14px; cursor:pointer; border-bottom:2px solid transparent;}
+  .detail-tab.active{ color:var(--green); border-bottom-color:var(--green);}
+  .detail-pane{ flex:1; overflow-y:auto; padding:16px 18px;}
+
+  .own-canvas-wrap{ flex:1; display:flex; flex-direction:column; padding:16px 18px;}
+  .own-canvas-wrap canvas{ width:100%; flex:1; min-height:200px;}
+
+  .trade-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:12px;}
+  .trade-row:last-child{ border-bottom:none;}
+  .trade-side.buy{ color:var(--green); font-weight:700;}
+  .trade-side.sell{ color:var(--red); font-weight:700;}
+  .trade-addr{ color:var(--muted); cursor:pointer;}
+  .trade-addr:hover{ color:var(--text);}
+
+  .dev-banner{ background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:14px; font-family:var(--mono); font-size:12px;}
+  .dev-banner b{ color:var(--purple);}
+  .holder-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:12px;}
+  .holder-row:last-child{ border-bottom:none;}
+  .holder-tag{ font-size:10px; padding:1px 6px; border-radius:4px; border:1px solid var(--purple); color:var(--purple); margin-left:6px;}
+  .bubble-map{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:14px 0 20px; justify-content:center;}
+  .bubble{ border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:10px; font-weight:700; color:#06140d; flex-shrink:0;}
+  .bubble.dev{ border:2px solid var(--purple);}
+
   .toast-wrap{ position:fixed; bottom:20px; right:20px; z-index:200; display:flex; flex-direction:column; gap:8px; align-items:flex-end;}
   .toast{ background:var(--panel2); border:1px solid var(--green-dim); color:var(--green); font-family:var(--mono); font-size:12px; padding:10px 14px; border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,0.4); animation: toastIn .2s ease-out; max-width:280px;}
   @keyframes toastIn{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
@@ -230,7 +254,7 @@
     <div class="hero">
       <div>
         <h1>Token Solana baru, live dari Pump.fun</h1>
-        <p>Mendeteksi token baru langsung via WebSocket PumpPortal (real-time, tanpa API key), plus data harga/liquidity Dexscreener begitu token punya pool. Hubungkan Phantom untuk lihat saldo &amp; siap transaksi.</p>
+        <p>Mendeteksi token baru langsung dari on-chain log program Pump.fun lewat WebSocket Solana RPC, plus data harga/liquidity Dexscreener begitu token punya pool. Hubungkan Phantom untuk lihat saldo &amp; siap transaksi.</p>
       </div>
       <div class="controls">
         <label class="wl-filter"><input type="checkbox" id="wlOnly"> watchlist aja</label>
@@ -285,8 +309,9 @@
     </div>
 
     <footer>
-      Catatan: feed live ini menggunakan WebSocket PumpPortal (pumpportal.fun/api/data) yang khusus nge-track event token baru Pump.fun — tidak perlu API key & lebih reliable dibanding raw RPC.
-      Data harga & liquidity diambil dari API publik Dexscreener (endpoint v1) — token yang masih di bonding curve Pump.fun (belum migrasi ke PumpSwap/Raydium) belum akan punya data ini.
+      Catatan: feed live ini berjalan langsung dari browser kamu via WebSocket ke Solana RPC (logsSubscribe ke program Pump.fun) — tidak ada server perantara.
+      Default RPC sudah dipasang ke Helius sesuai yang kamu kasih. Karena ini file client-side, key tersebut akan terlihat siapa saja yang melihat source/network tab kalau web ini dipublikasikan — kalau mau publik, pakai key khusus dengan rate-limit dibatasi di dashboard Helius.
+      Data harga & liquidity diambil dari API publik Dexscreener — token yang masih di bonding curve Pump.fun (belum migrasi ke Raydium) belum akan punya data ini, chart-nya pun belum tersedia di Dexscreener.
       Fitur Buy/Sell membangun transaksi lewat API publik PumpPortal (pihak ketiga, bukan afiliasi Anthropic) dan menandatanganinya lewat Phantom kamu sendiri — non-custodial. Selalu periksa detail transaksi di popup Phantom sebelum approve, dan coba nominal kecil dulu.
       Parsing event Pump.fun dibuat manual berdasar struktur program publiknya; jika Pump.fun mengubah programnya, parsing perlu di-update.
     </footer>
@@ -334,6 +359,9 @@ function computeNameRisk(tok){
 
 let state = {
   tokens: JSON.parse(localStorage.getItem("pt_tokens") || "[]"),
+  trades: [],
+  currentDetailMint: null,
+  currentDetailTab: "chart",
   watchlist: JSON.parse(localStorage.getItem("pt_watchlist") || "[]"),
   alertOn: localStorage.getItem("pt_alert_on") === "1",
   viewMode: localStorage.getItem("pt_view_mode") || "list",
@@ -400,7 +428,7 @@ function b64ToBytes(b64){
 // Best-effort decode of Pump.fun "CreateEvent" program-data payload.
 // Layout (anchor event, after 8-byte discriminator):
 // name: string (u32 len + utf8), symbol: string, uri: string,
-// mint: pubkey(32), bondingCurve: pubkey(32), user: pubkey(32)
+// mint: pubkey(32), bondingCurve: pubkey(32), user/creator: pubkey(32)
 function decodeCreateEvent(bytes){
   try{
     let offset = 8; // discriminator
@@ -420,7 +448,36 @@ function decodeCreateEvent(bytes){
     const symbol = readString();
     const uri = readString();
     const mint = readPubkey();
-    return { name, symbol, uri, mint };
+    let bondingCurve = null, creator = null;
+    try{ bondingCurve = readPubkey(); creator = readPubkey(); }catch(e){ /* layout may differ, mint is what matters most */ }
+    return { name, symbol, uri, mint, bondingCurve, creator };
+  }catch(e){
+    return null;
+  }
+}
+
+function readU64LE(bytes, offset){
+  const dv = new DataView(bytes.buffer, bytes.byteOffset + offset, 8);
+  return dv.getBigUint64(0, true);
+}
+
+// Best-effort decode of Pump.fun "TradeEvent" program-data payload (buy/sell).
+// Layout (anchor event, after 8-byte discriminator):
+// mint: pubkey(32), solAmount: u64, tokenAmount: u64, isBuy: bool(1),
+// user: pubkey(32), timestamp: i64(8) ...(more reserve fields follow, not needed here)
+function decodeTradeEvent(bytes){
+  try{
+    let offset = 8;
+    function readPubkey(){ const pk = bytes.slice(offset, offset+32); offset += 32; return base58encode(pk); }
+    const mint = readPubkey();
+    const solAmount = Number(readU64LE(bytes, offset)); offset += 8;
+    const tokenAmount = Number(readU64LE(bytes, offset)); offset += 8;
+    const isBuy = bytes[offset] === 1; offset += 1;
+    const user = readPubkey();
+    let ts = Date.now();
+    try{ ts = Number(readU64LE(bytes, offset)) * 1000; }catch(e){}
+    if(!mint || solAmount <= 0) return null;
+    return { mint, solAmount: solAmount/1e9, tokenAmount: tokenAmount/1e6, isBuy, user, ts: isFinite(ts)&&ts>0 ? ts : Date.now() };
   }catch(e){
     return null;
   }
@@ -641,6 +698,19 @@ function pushToken(tok){
   if(state.alertOn) fireAlert(tok);
 }
 
+function pushTrade(trade){
+  state.trades.unshift(trade);
+  if(state.trades.length > 400) state.trades.pop();
+  // live-update the open detail modal if it's showing this mint
+  if(state.currentDetailMint === trade.mint && state.currentDetailTab === "trades"){
+    renderDetailTrades(trade.mint);
+  }
+}
+
+function getTradesForMint(mint){
+  return state.trades.filter(t=>t.mint===mint);
+}
+
 function fireAlert(tok){
   try{
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -676,33 +746,23 @@ async function fetchSafety(tok){
 }
 
 async function tryFetchDex(tok){
-  // Coba endpoint baru dexscreener v1, fallback ke endpoint lama
-  const endpoints = [
-    `https://api.dexscreener.com/tokens/v1/solana/${tok.mint}`,
-    `https://api.dexscreener.com/latest/dex/tokens/${tok.mint}`,
-  ];
-  for(const url of endpoints){
-    try{
-      const res = await fetch(url);
-      if(!res.ok) continue;
-      const data = await res.json();
-      const pairs = data?.pairs || data?.schemaVersion && data?.pairs;
-      const pair = Array.isArray(pairs) ? pairs[0] : null;
-      if(pair){
-        tok.dex = {
-          priceUsd: pair.priceUsd,
-          liquidity: pair.liquidity?.usd || 0,
-          vol24: pair.volume?.h24 || 0,
-          change24: pair.priceChange?.h24 || 0,
-          pairAddress: pair.pairAddress || null,
-        };
-        statDex.textContent = state.tokens.filter(t=>t.dex).length;
-        renderTokens();
-        saveTokens();
-        return; // berhasil, stop coba endpoint berikutnya
-      }
-    }catch(e){ /* lanjut ke endpoint berikutnya */ }
-  }
+  try{
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tok.mint}`);
+    if(!res.ok) return;
+    const data = await res.json();
+    const pair = data?.pairs?.[0];
+    if(pair){
+      tok.dex = {
+        priceUsd: pair.priceUsd,
+        liquidity: pair.liquidity?.usd || 0,
+        vol24: pair.volume?.h24 || 0,
+        change24: pair.priceChange?.h24 || 0,
+      };
+      statDex.textContent = state.tokens.filter(t=>t.dex).length;
+      renderTokens();
+      saveTokens();
+    }
+  }catch(e){ /* silently ignore - no pool yet or network hiccup */ }
 }
 
 // Periodically refresh dex + safety data for tokens that don't have it yet
@@ -711,28 +771,28 @@ setInterval(()=>{
   state.tokens.filter(t=>!t.safety).slice(0,10).forEach(fetchSafety);
 }, 15000);
 
-// ---------- WebSocket feed (via PumpPortal — dedicated pump.fun event stream) ----------
-const PUMPPORTAL_WSS = "wss://pumpportal.fun/api/data";
-
+// ---------- WebSocket feed ----------
 function connectFeed(){
   if(state.ws){ try{ state.ws.close(); }catch(e){} }
-  setFeedStatus("connecting","connecting...");
+  setFeedStatus("connecting","connecting");
   let ws;
   try{
-    ws = new WebSocket(PUMPPORTAL_WSS);
+    ws = new WebSocket(DEFAULT_RPC_WSS);
   }catch(e){
-    setFeedStatus("err","gagal buka WebSocket");
+    setFeedStatus("err","invalid url");
     return;
   }
   state.ws = ws;
 
   ws.onopen = ()=>{
-    setFeedStatus("live","live · PumpPortal");
+    setFeedStatus("live","live");
     state.reconnectDelay = 4000;
     state.debug.connectedAt = Date.now();
     state.debug.lastError = null;
-    // Subscribe ke new token events dari PumpPortal
-    ws.send(JSON.stringify({ method: "subscribeNewToken" }));
+    ws.send(JSON.stringify({
+      jsonrpc:"2.0", id:1, method:"logsSubscribe",
+      params:[ {mentions:[PUMPFUN_PROGRAM]}, {commitment:"confirmed"} ]
+    }));
     updateDebugLine();
   };
 
@@ -741,42 +801,57 @@ function connectFeed(){
     try{ msg = JSON.parse(ev.data); }catch(e){ return; }
     state.debug.msgCount++;
 
-    // PumpPortal kirim error jika ada
+    if(msg.id === 1 && msg.result !== undefined){
+      state.debug.subId = msg.result;
+      updateDebugLine();
+      return;
+    }
     if(msg.error){
-      state.debug.lastError = typeof msg.error === "string" ? msg.error : JSON.stringify(msg.error);
+      state.debug.lastError = JSON.stringify(msg.error);
       updateDebugLine();
       return;
     }
 
-    // PumpPortal langsung kirim token baru tanpa perlu decode bytes
-    // txType === "create" = token baru di-launch di Pump.fun
-    if(msg.txType === "create" && msg.mint){
-      state.debug.logMsgCount++;
-      state.debug.lastLogAt = Date.now();
+    const logs = msg?.params?.result?.value?.logs;
+    if(!logs) return;
+    state.debug.logMsgCount++;
+    state.debug.lastLogAt = Date.now();
+
+    const isCreate = logs.some(l=> l.includes("Instruction: Create") || l.includes("Program log: Instruction: Create"));
+    const isTrade = logs.some(l=> l.includes("Instruction: Buy") || l.includes("Instruction: Sell"));
+
+    if(isTrade){
+      const dataLines = logs.filter(l=> l.startsWith("Program data:"));
+      for(const line of dataLines){
+        try{
+          const bytes = b64ToBytes(line.replace("Program data:","").trim());
+          const trade = decodeTradeEvent(bytes);
+          if(trade) pushTrade(trade);
+        }catch(e){}
+      }
+    }
+
+    if(!isCreate){ updateDebugLine(); return; }
+    const dataLine = logs.find(l=> l.startsWith("Program data:"));
+    if(!dataLine){ updateDebugLine(); return; }
+    const b64 = dataLine.replace("Program data:","").trim();
+    let bytes;
+    try{ bytes = b64ToBytes(b64); }catch(e){ updateDebugLine(); return; }
+    const decoded = decodeCreateEvent(bytes);
+    if(decoded && decoded.mint){
       state.debug.createMsgCount++;
-      pushToken({
-        name:   msg.name   || "Unknown",
-        symbol: msg.symbol || "?",
-        uri:    msg.uri    || "",
-        mint:   msg.mint,
-        sig:    msg.signature || null,
-        marketCapSol: msg.marketCapSol || 0,
-      });
-    } else if(msg.mint || msg.signature){
-      // pesan lain dari portal (trade, dll), hitung aja buat debug
-      state.debug.logMsgCount++;
-      state.debug.lastLogAt = Date.now();
+      pushToken(decoded);
     }
     updateDebugLine();
   };
 
-  ws.onerror = (e)=>{
+  ws.onerror = ()=>{
     setFeedStatus("err","error");
-    state.debug.lastError = "WebSocket error — cek console browser";
+    state.debug.lastError = "WebSocket error (lihat console browser buat detail)";
     updateDebugLine();
   };
   ws.onclose = ()=>{
-    setFeedStatus("err",`disconnected — retry ${Math.round(state.reconnectDelay/1000)}s`);
+    setFeedStatus("err",`disconnected — retry in ${Math.round(state.reconnectDelay/1000)}s`);
     setTimeout(connectFeed, state.reconnectDelay);
     state.reconnectDelay = Math.min(state.reconnectDelay * 1.7, 30000);
   };
@@ -788,12 +863,13 @@ function updateDebugLine(){
   if(!el) return;
   const connSecs = d.connectedAt ? Math.floor((Date.now()-d.connectedAt)/1000) : 0;
   const lastLog = d.lastLogAt ? Math.floor((Date.now()-d.lastLogAt)/1000)+"s lalu" : "belum ada";
-  let html = `[PumpPortal WSS] terhubung ${connSecs}s · pesan diterima: ${d.msgCount} · event pump.fun: ${d.logMsgCount} · create terdeteksi: ${d.createMsgCount} · terakhir: ${lastLog}`;
+  let html = `terhubung ${connSecs}s · pesan diterima: ${d.msgCount} · pesan log pump.fun: ${d.logMsgCount} · create terdeteksi: ${d.createMsgCount} · log terakhir: ${lastLog}`;
+  if(d.subId) html += ` · subscription #${d.subId}`;
   if(d.lastError) html += `<br><span style="color:var(--red)">error: ${escapeHtml(d.lastError)}</span>`;
-  if(d.connectedAt && connSecs > 45 && d.createMsgCount === 0 && d.msgCount === 0){
-    html += `<br><span style="color:var(--red)">⚠ ${connSecs}s terkonek tapi 0 pesan masuk — cek koneksi internet / coba refresh.</span>`;
-  } else if(d.connectedAt && connSecs > 10 && d.msgCount === 0){
-    html += `<br><span style="color:var(--muted)">Menunggu event pertama dari PumpPortal... (pump.fun kadang sepi di jam tertentu)</span>`;
+  if(d.connectedAt && connSecs > 30 && d.logMsgCount === 0){
+    html += `<br><span style="color:var(--red)">⚠ udah ${connSecs}s konek tapi belum ada satu pun log dari program Pump.fun masuk — kemungkinan RPC ini lagi limit/bermasalah. Coba refresh halaman beberapa saat lagi.</span>`;
+  } else if(d.logMsgCount > 0 && d.createMsgCount === 0 && d.logMsgCount > 20){
+    html += `<br><span style="color:var(--purple)">log pump.fun masuk tapi belum ada yang ke-decode jadi token — kemungkinan format event-nya berubah, parsing perlu diupdate.</span>`;
   }
   el.innerHTML = html;
 }
@@ -872,23 +948,174 @@ alertToggle.onclick = async ()=>{
 };
 syncAlertUI();
 
-// ---------- Chart modal ----------
+// ---------- Token Detail modal (Chart / Trades / Holders) ----------
 const chartModalBg = document.getElementById("chartModalBg");
+const chartBody = document.getElementById("chartBody");
+
 function openChart(mint, symbol){
+  state.currentDetailMint = mint;
+  state.currentDetailTab = "chart";
   document.getElementById("chartTokenLabel").textContent = "$" + (symbol||"?") + " · " + shortAddr(mint);
-  const tok = state.tokens.find(t=>t.mint===mint);
-  const body = document.getElementById("chartBody");
-  if(tok && tok.dex){
-    body.innerHTML = `<iframe src="https://dexscreener.com/solana/${mint}?embed=1&theme=dark&trades=0&info=0" loading="lazy"></iframe>`;
-  } else {
-    body.innerHTML = `<div class="chart-empty">
-      <div>Token ini masih di bonding curve Pump.fun (belum punya pool Dexscreener).</div>
-      <a href="https://pump.fun/${mint}" target="_blank" style="color:var(--green); text-decoration:underline;">Lihat live chart bonding curve di pump.fun →</a>
-    </div>`;
-  }
+  setDetailTab("chart");
   chartModalBg.style.display = "flex";
 }
-document.getElementById("chartClose").onclick = ()=> chartModalBg.style.display = "none";
+document.getElementById("chartClose").onclick = ()=>{
+  chartModalBg.style.display = "none";
+  state.currentDetailMint = null;
+};
+
+document.getElementById("dtabChart").onclick = ()=> setDetailTab("chart");
+document.getElementById("dtabTrades").onclick = ()=> setDetailTab("trades");
+document.getElementById("dtabHolders").onclick = ()=> setDetailTab("holders");
+
+function setDetailTab(tab){
+  state.currentDetailTab = tab;
+  ["chart","trades","holders"].forEach(t=>{
+    document.getElementById("dtab"+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle("active", t===tab);
+  });
+  const mint = state.currentDetailMint;
+  if(tab === "chart") renderDetailChart(mint);
+  else if(tab === "trades") renderDetailTrades(mint);
+  else renderDetailHolders(mint);
+}
+
+function renderDetailChart(mint){
+  const tok = state.tokens.find(t=>t.mint===mint);
+  if(tok && tok.dex){
+    chartBody.innerHTML = `<iframe src="https://dexscreener.com/solana/${mint}?embed=1&theme=dark&trades=0&info=0" loading="lazy" style="flex:1; border:none; width:100%;"></iframe>`;
+    chartBody.style.display = "flex";
+    chartBody.style.flexDirection = "column";
+    return;
+  }
+  // No dex pool yet (still bonding curve) — draw our own live price chart from trades we've captured.
+  const trades = getTradesForMint(mint).slice().reverse(); // oldest first
+  chartBody.innerHTML = `<div class="own-canvas-wrap">
+      <canvas id="ownChartCanvas"></canvas>
+      <div style="font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:8px;">
+        Chart bonding curve ini digambar dari trade yang ketangkep live sejak halaman dibuka (bukan histori lama) — makin lama dibuka, makin lengkap.
+        <a href="https://pump.fun/${mint}" target="_blank" style="color:var(--green);">Lihat chart lengkap di pump.fun →</a>
+      </div>
+    </div>`;
+  chartBody.style.display = "block";
+  drawOwnChart(trades);
+}
+
+function drawOwnChart(trades){
+  const canvas = document.getElementById("ownChartCanvas");
+  if(!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = Math.max(200, rect.height - 40) * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+  const w = canvas.width/dpr, h = canvas.height/dpr;
+  ctx.clearRect(0,0,w,h);
+  if(trades.length < 2){
+    ctx.fillStyle = "#6f8a7e";
+    ctx.font = "12px JetBrains Mono";
+    ctx.fillText("Menunggu trade pertama buat mulai gambar chart…", 14, h/2);
+    return;
+  }
+  const prices = trades.map(t=> t.solAmount / t.tokenAmount);
+  const min = Math.min(...prices), max = Math.max(...prices);
+  const pad = 20;
+  ctx.beginPath();
+  prices.forEach((p,i)=>{
+    const x = pad + (i/(prices.length-1)) * (w - pad*2);
+    const y = h - pad - ((p-min)/(max-min || 1)) * (h - pad*2);
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  });
+  ctx.strokeStyle = prices[prices.length-1] >= prices[0] ? "#3dffa0" : "#ff5c7a";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function renderDetailTrades(mint){
+  const trades = getTradesForMint(mint);
+  chartBody.style.display = "block";
+  if(trades.length === 0){
+    chartBody.innerHTML = `<div class="detail-pane"><div class="chart-empty" style="padding:30px 0;">Belum ada trade yang ketangkep buat token ini sejak halaman dibuka. Trade baru bakal langsung muncul di sini live.</div></div>`;
+    return;
+  }
+  chartBody.innerHTML = `<div class="detail-pane">` + trades.map(t=>`
+    <div class="trade-row">
+      <span class="trade-side ${t.isBuy?'buy':'sell'}">${t.isBuy?'BUY':'SELL'}</span>
+      <span>${t.solAmount.toFixed(4)} SOL</span>
+      <span class="trade-addr" onclick="copyMint('${t.user}')" title="klik buat copy alamat">${shortAddr(t.user)}</span>
+      <span style="color:var(--muted)">${timeAgo(t.ts)}</span>
+    </div>
+  `).join("") + `</div>`;
+}
+
+async function renderDetailHolders(mint){
+  chartBody.style.display = "block";
+  chartBody.innerHTML = `<div class="detail-pane"><div class="chart-empty" style="padding:30px 0;">Mengambil data holder dari chain…</div></div>`;
+  const tok = state.tokens.find(t=>t.mint===mint);
+  try{
+    const [largestRes, supplyRes] = await Promise.all([
+      fetch(DEFAULT_RPC_HTTP, { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({jsonrpc:"2.0", id:1, method:"getTokenLargestAccounts", params:[mint]}) }).then(r=>r.json()),
+      fetch(DEFAULT_RPC_HTTP, { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({jsonrpc:"2.0", id:1, method:"getTokenSupply", params:[mint]}) }).then(r=>r.json()),
+    ]);
+    const largest = largestRes?.result?.value || [];
+    const totalSupply = Number(supplyRes?.result?.value?.amount || 0);
+    if(largest.length === 0 || totalSupply === 0){
+      chartBody.innerHTML = `<div class="detail-pane"><div class="chart-empty" style="padding:30px 0;">Belum ada data holder (token mungkin baru banget atau RPC belum sync).</div></div>`;
+      return;
+    }
+    // resolve owners of each largest token account
+    const addrs = largest.map(a=>a.address);
+    const ownersRes = await fetch(DEFAULT_RPC_HTTP, { method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({jsonrpc:"2.0", id:1, method:"getMultipleAccounts", params:[addrs, {encoding:"base64"}]}) }).then(r=>r.json());
+    const accInfos = ownersRes?.result?.value || [];
+    const holders = largest.map((a, i)=>{
+      let owner = null;
+      try{
+        const b64 = accInfos[i]?.data?.[0];
+        if(b64){
+          const bytes = b64ToBytes(b64);
+          owner = base58encode(bytes.slice(32, 64));
+        }
+      }catch(e){}
+      return { amount: Number(a.amount), owner: owner || a.address, pct: (Number(a.amount)/totalSupply)*100 };
+    });
+
+    let devHtml = "";
+    if(tok && tok.creator){
+      const devHolder = holders.find(h=> h.owner === tok.creator);
+      const devPct = devHolder ? devHolder.pct : 0;
+      devHtml = `<div class="dev-banner">Dev (${shortAddr(tok.creator)}) ${devHolder ? `masih pegang <b>${devPct.toFixed(2)}%</b> dari supply` : `<b>sudah gak masuk top holder</b> (kemungkinan sudah jual semua / kepemilikan kecil)`}.</div>`;
+    } else {
+      devHtml = `<div class="dev-banner" style="border-color:var(--line); color:var(--muted);">Alamat dev gak ke-capture (token ini mungkin udah ada sebelum kamu buka web ini, jadi event Create-nya gak ketangkep).</div>`;
+    }
+
+    const maxPct = Math.max(...holders.map(h=>h.pct), 1);
+    const bubbles = holders.slice(0,15).map(h=>{
+      const isDev = tok && tok.creator && h.owner === tok.creator;
+      const size = 24 + Math.sqrt(h.pct/maxPct) * 56;
+      return `<div class="bubble ${isDev?'dev':''}" style="width:${size}px;height:${size}px;background:${avatarColor(h.owner)}" title="${h.owner} — ${h.pct.toFixed(2)}%">${h.pct.toFixed(0)}%</div>`;
+    }).join("");
+
+    const rows = holders.map(h=>{
+      const isDev = tok && tok.creator && h.owner === tok.creator;
+      return `<div class="holder-row">
+        <span class="trade-addr" onclick="copyMint('${h.owner}')" title="klik buat copy">${shortAddr(h.owner)} ${isDev?'<span class="holder-tag">DEV</span>':''}</span>
+        <span>${h.pct.toFixed(2)}%</span>
+      </div>`;
+    }).join("");
+
+    chartBody.innerHTML = `<div class="detail-pane">
+      ${devHtml}
+      <div class="bubble-map">${bubbles}</div>
+      ${rows}
+      <div style="font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:10px;">Cuma nunjukin top 20 token account terbesar on-chain — bukan daftar lengkap semua holder.</div>
+    </div>`;
+  }catch(e){
+    chartBody.innerHTML = `<div class="detail-pane"><div class="chart-empty" style="padding:30px 0;">Gagal ambil data holder: ${escapeHtml(e.message||String(e))}</div></div>`;
+  }
+}
 
 // ---------- Trade modal ----------
 const tradeModalBg = document.getElementById("tradeModalBg");
@@ -1071,6 +1298,11 @@ connectFeed();
       <div class="chart-head">
         <strong id="chartTokenLabel" style="font-family:'Space Grotesk',sans-serif;"></strong>
         <button class="btn-ghost" id="chartClose" style="cursor:pointer;">Tutup</button>
+      </div>
+      <div class="detail-tabs">
+        <button class="detail-tab active" id="dtabChart">Chart</button>
+        <button class="detail-tab" id="dtabTrades">Trades</button>
+        <button class="detail-tab" id="dtabHolders">Holders</button>
       </div>
       <div id="chartBody"></div>
     </div>
