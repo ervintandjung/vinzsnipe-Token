@@ -77,7 +77,7 @@
   .controls input::placeholder{color:var(--muted);}
   .controls input:focus, .controls select:focus{border-color:var(--green-dim);}
 
-  .stat-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px;}
+  .stat-row{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-bottom:24px;}
   .stat-card{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px;}
   .stat-card .label{font-size:11px; color:var(--muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:.5px;}
   .stat-card .value{font-size:22px; font-weight:700; font-family:'Space Grotesk',sans-serif; margin-top:4px;}
@@ -164,6 +164,46 @@
   .chip{ font-family:var(--mono); font-size:11px; background:var(--bg); border:1px solid var(--line); color:var(--muted); padding:5px 10px; border-radius:6px; cursor:pointer;}
   .chip:hover{ border-color:var(--green-dim); color:var(--green);}
 
+  /* ---------- LIST VIEW (dexscreener-style rows) ---------- */
+  .view-toggle{ display:flex; gap:6px; }
+  .view-btn{ font-family:var(--mono); font-size:12px; background:var(--panel); border:1px solid var(--line); color:var(--muted); padding:9px 14px; border-radius:8px; cursor:pointer; }
+  .view-btn.active{ background:var(--panel2); color:var(--green); border-color:var(--green-dim); }
+
+  #listView{ background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .list-row{ display:grid; grid-template-columns: 24px 38px 1fr auto 46px; align-items:center; gap:12px; padding:13px 14px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .list-row:hover{ background:var(--panel2); }
+  .list-row:last-child{ border-bottom:none; }
+  .list-star{ background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:0;}
+  .list-star.active{ color:#ffd24d; }
+  .list-avatar{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-family:'Space Grotesk',sans-serif; font-size:13px; color:#06140d; flex-shrink:0; }
+  .list-info{ min-width:0; }
+  .list-name-row{ display:flex; align-items:center; gap:6px; font-weight:700; font-size:14px; }
+  .list-dot{ width:7px; height:7px; border-radius:50%; flex-shrink:0;}
+  .list-dot.safe{ background:var(--green); box-shadow:0 0 5px var(--green);}
+  .list-dot.risk{ background:var(--red); box-shadow:0 0 5px var(--red);}
+  .list-dot.pending{ background:var(--muted);}
+  .list-sub-row{ display:flex; align-items:center; gap:9px; font-size:11px; color:var(--muted); font-family:var(--mono); margin-top:2px;}
+  .list-sub-row .ic{ cursor:pointer; }
+  .list-sub-row .ic:hover{ color:var(--green); }
+  .list-numbers{ text-align:right; }
+  .list-price{ font-family:var(--mono); font-weight:700; font-size:14px; padding:2px 5px; border-radius:5px; display:inline-block;}
+  .list-price.flash-up{ background:rgba(61,255,160,0.18); color:var(--green);}
+  .list-price.flash-down{ background:rgba(255,92,122,0.18); color:var(--red);}
+  .list-price.flat{ color:var(--text);}
+  .list-change{ font-family:var(--mono); font-size:11px; margin-top:2px;}
+  .list-numbers2{ text-align:right; }
+  .list-mcap{ font-family:var(--mono); font-size:12px; color:var(--text);}
+  .list-mcap-sub{ font-family:var(--mono); font-size:11px; color:var(--muted);}
+  .list-bolt{ width:34px; height:34px; border-radius:50%; background:rgba(61,255,160,0.1); border:1px solid var(--green-dim); display:flex; align-items:center; justify-content:center; color:var(--green); font-size:15px; cursor:pointer; flex-shrink:0;}
+  .list-bolt:hover{ background:rgba(61,255,160,0.22);}
+  .list-numgroup{ display:flex; align-items:center; gap:18px;}
+
+  @media (max-width: 760px){
+    .list-row{ grid-template-columns: 20px 34px 1fr auto 38px; gap:8px; padding:11px 10px;}
+    .list-numgroup{ gap:10px;}
+    .list-mcap, .list-mcap-sub{ font-size:11px;}
+  }
+
   @media (max-width: 760px){
     .stat-row{ grid-template-columns:repeat(2,1fr);}
     thead th:nth-child(4), td:nth-child(4){ display:none; }
@@ -201,33 +241,48 @@
           <option value="liq">Liquidity tertinggi</option>
           <option value="vol">Volume 24h</option>
         </select>
-        <button class="btn-ghost" id="settingsBtn" style="cursor:pointer;">RPC Settings</button>
       </div>
     </div>
 
     <div class="stat-row">
       <div class="stat-card"><div class="label">Token terdeteksi (sesi ini)</div><div class="value green" id="statCount">0</div></div>
       <div class="stat-card"><div class="label">Sudah ada pool Dexscreener</div><div class="value purple" id="statDex">0</div></div>
-      <div class="stat-card"><div class="label">RPC</div><div class="value" id="statRpc" style="font-size:13px; font-family:var(--mono);">default</div></div>
-      <div class="stat-card"><div class="label">Wallet</div><div class="value" id="statWallet" style="font-size:13px; font-family:var(--mono);">belum connect</div></div>
     </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Token</th>
-          <th>Mint</th>
-          <th>Status</th>
-          <th>Harga / Liquidity</th>
-          <th>Umur</th>
-          <th>Links</th>
-          <th>Aksi</th>
-        </tr>
-      </thead>
-      <tbody id="tokenBody">
-        <tr><td colspan="7" class="empty">Menunggu token baru muncul di Pump.fun…</td></tr>
-      </tbody>
-    </table>
+    <div class="stat-card" id="debugCard" style="margin-bottom:22px; font-family:var(--mono); font-size:11px; color:var(--muted);">
+      <div class="label" style="margin-bottom:6px;">Debug feed (buat ngecek kalau token gak muncul-muncul)</div>
+      <div id="debugLine">belum connect ke RPC…</div>
+    </div>
+
+    <div class="controls" style="margin-bottom:14px;">
+      <div class="view-toggle">
+        <button class="view-btn active" id="viewListBtn">List</button>
+        <button class="view-btn" id="viewTabBtn">Tabel</button>
+      </div>
+    </div>
+
+    <div id="listView">
+      <div id="listBody"></div>
+    </div>
+
+    <div id="tableView" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>Token</th>
+            <th>Mint</th>
+            <th>Status</th>
+            <th>Harga / Liquidity</th>
+            <th>Umur</th>
+            <th>Links</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tokenBody">
+          <tr><td colspan="7" class="empty">Menunggu token baru muncul di Pump.fun…</td></tr>
+        </tbody>
+      </table>
+    </div>
 
     <footer>
       Catatan: feed live ini berjalan langsung dari browser kamu via WebSocket ke Solana RPC (logsSubscribe ke program Pump.fun) — tidak ada server perantara.
@@ -239,18 +294,6 @@
   </main>
 
   <div class="toast-wrap" id="toastWrap"></div>
-
-  <div class="modal-bg" id="modalBg">
-    <div class="modal">
-      <h3>RPC WebSocket</h3>
-      <p>Default pakai RPC publik Solana (gampang kena limit). Tempel URL WebSocket RPC kamu sendiri (contoh dari Helius: wss://mainnet.helius-rpc.com/?api-key=xxxx) untuk feed yang lebih stabil.</p>
-      <input id="rpcInput" placeholder="wss://...">
-      <div class="modal-actions">
-        <button class="btn-ghost" id="modalCancel">Batal</button>
-        <button class="btn-primary" id="modalSave">Simpan & Reconnect</button>
-      </div>
-    </div>
-  </div>
 
 <script>
 const PUMPFUN_PROGRAM = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
@@ -291,13 +334,14 @@ function computeNameRisk(tok){
 }
 
 let state = {
-  rpcWss: localStorage.getItem("pt_rpc_wss") || DEFAULT_RPC_WSS,
   tokens: JSON.parse(localStorage.getItem("pt_tokens") || "[]"),
   watchlist: JSON.parse(localStorage.getItem("pt_watchlist") || "[]"),
   alertOn: localStorage.getItem("pt_alert_on") === "1",
+  viewMode: localStorage.getItem("pt_view_mode") || "list",
   wallet: null,
   ws: null,
   reconnectDelay: 4000,
+  debug: { msgCount:0, logMsgCount:0, createMsgCount:0, subId:null, lastError:null, lastLogAt:null, connectedAt:null },
 };
 
 function saveTokens(){
@@ -387,7 +431,6 @@ function decodeCreateEvent(bytes){
 const tokenBody = document.getElementById("tokenBody");
 const statCount = document.getElementById("statCount");
 const statDex = document.getElementById("statDex");
-const statRpc = document.getElementById("statRpc");
 const feedStatus = document.getElementById("feedStatus");
 const feedStatusText = document.getElementById("feedStatusText");
 const tickerStrip = document.getElementById("tickerStrip");
@@ -425,7 +468,45 @@ function isRisky(t){
   return false;
 }
 
-function renderTokens(){
+function fmtAge(ts){
+  const s = Math.floor((Date.now()-ts)/1000);
+  if(s<60) return s+"d"; // detik
+  if(s<3600) return Math.floor(s/60)+"m";
+  if(s<86400) return Math.floor(s/3600)+"h";
+  if(s<86400*30) return Math.floor(s/86400)+"hr"; // hari
+  if(s<86400*365) return Math.floor(s/(86400*30))+"bln";
+  return Math.floor(s/(86400*365))+"th";
+}
+
+// Indonesian-style number formatting: comma as decimal separator, jt = juta (million), M = miliar (billion)
+function fmtPriceID(n){
+  if(n === null || n === undefined || isNaN(n)) return "—";
+  n = Number(n);
+  let str;
+  if(n === 0) str = "0";
+  else if(n < 0.0001) str = n.toFixed(8);
+  else if(n < 1) str = n.toFixed(5);
+  else if(n < 1000) str = n.toFixed(4);
+  else str = n.toFixed(2);
+  str = str.replace(/0+$/,'').replace(/\.$/,'');
+  return "$" + str.replace(".", ",");
+}
+function fmtCompactID(n){
+  if(n === null || n === undefined || isNaN(n) || n === 0) return "—";
+  n = Number(n);
+  if(n >= 1e9) return "$" + (n/1e9).toFixed(2).replace(".", ",") + " M";
+  if(n >= 1e6) return "$" + (n/1e6).toFixed(1).replace(".", ",") + " jt";
+  if(n >= 1e3) return "$" + (n/1e3).toFixed(1).replace(".", ",") + " rb";
+  return "$" + n.toFixed(0);
+}
+function avatarColor(s){
+  let hash = 0;
+  for(let i=0;i<s.length;i++) hash = s.charCodeAt(i) + ((hash<<5)-hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue},60%,48%)`;
+}
+
+function getFilteredSortedList(){
   const q = document.getElementById("searchInput").value.trim().toLowerCase();
   const sort = document.getElementById("sortSelect").value;
   const wlOnly = document.getElementById("wlOnly").checked;
@@ -439,12 +520,20 @@ function renderTokens(){
   if(sort === "liq") list = [...list].sort((a,b)=> (b.dex?.liquidity||0) - (a.dex?.liquidity||0));
   else if(sort === "vol") list = [...list].sort((a,b)=> (b.dex?.vol24||0) - (a.dex?.vol24||0));
   else list = [...list].sort((a,b)=> b.ts - a.ts);
+  return { list, wlOnly };
+}
 
+function renderTokens(){
+  const { list, wlOnly } = getFilteredSortedList();
+  if(state.viewMode === "table") renderTableRows(list, wlOnly);
+  else renderListRows(list, wlOnly);
+}
+
+function renderTableRows(list, wlOnly){
   if(list.length === 0){
     tokenBody.innerHTML = `<tr><td colspan="7" class="empty">${wlOnly ? 'Belum ada token di watchlist.' : 'Belum ada token yang cocok. Menunggu feed…'}</td></tr>`;
     return;
   }
-
   tokenBody.innerHTML = list.map(t=>{
     const dex = t.dex;
     const statusBadge = dex
@@ -476,6 +565,55 @@ function renderTokens(){
         <button class="action-btn sell" onclick="openTrade('${t.mint}', '${escapeHtml(t.symbol||'')}', 'sell')">Sell</button>
       </td>
     </tr>`;
+  }).join("");
+}
+
+const listBody = document.getElementById("listBody");
+function renderListRows(list, wlOnly){
+  if(list.length === 0){
+    listBody.innerHTML = `<div class="empty">${wlOnly ? 'Belum ada token di watchlist.' : 'Belum ada token yang cocok. Menunggu feed…'}</div>`;
+    return;
+  }
+  listBody.innerHTML = list.map(t=>{
+    const dex = t.dex;
+    const watched = isWatched(t.mint);
+    const sym = t.symbol || "?";
+    const initials = sym.replace(/[^A-Za-z0-9]/g,'').slice(0,3).toUpperCase() || "?";
+    let dotClass = "pending";
+    if(t.safety) dotClass = isRisky(t) ? "risk" : "safe";
+
+    let priceHtml = '<span class="list-price flat">—</span>';
+    let changeHtml = '';
+    let mcapHtml = '<span class="list-mcap">—</span>';
+    let mcapSubHtml = '<span class="list-mcap-sub">bonding curve</span>';
+    if(dex){
+      const up = Number(dex.change24) >= 0;
+      priceHtml = `<span class="list-price ${up?'flash-up':'flash-down'}">${fmtPriceID(dex.priceUsd)}</span>`;
+      changeHtml = `<div class="list-change" style="color:${up?'var(--green)':'var(--red)'}">${up?'+':''}${Number(dex.change24).toFixed(2)}%</div>`;
+      mcapHtml = `<span class="list-mcap">${fmtCompactID(dex.liquidity)}</span>`;
+      mcapSubHtml = `<span class="list-mcap-sub">vol ${fmtCompactID(dex.vol24)}</span>`;
+    }
+
+    return `<div class="list-row" onclick="openChart('${t.mint}','${escapeHtml(sym)}')">
+      <button class="list-star ${watched?'active':''}" onclick="event.stopPropagation(); toggleWatch('${t.mint}')">${watched?'★':'☆'}</button>
+      <div class="list-avatar" style="background:${avatarColor(t.mint)}">${initials}</div>
+      <div class="list-info">
+        <div class="list-name-row">
+          <span class="list-dot ${dotClass}" title="${t.safety ? (isRisky(t)?'ada sinyal resiko':'mint & freeze sudah revoked') : 'mengecek...'}"></span>
+          <span>${escapeHtml(sym)}</span>
+        </div>
+        <div class="list-sub-row">
+          <span>${fmtAge(t.ts)}</span>
+          <span class="ic" title="lihat di pump.fun" onclick="event.stopPropagation(); window.open('https://pump.fun/${t.mint}','_blank')">✎</span>
+          <span class="ic" title="cari di dexscreener" onclick="event.stopPropagation(); window.open('https://dexscreener.com/solana/${t.mint}','_blank')">⌕</span>
+        </div>
+      </div>
+      <div class="list-numgroup">
+        <div class="list-numbers">${priceHtml}${changeHtml}</div>
+        <div class="list-numbers2">${mcapHtml}<br>${mcapSubHtml}</div>
+      </div>
+      <button class="list-bolt" title="quick buy" onclick="event.stopPropagation(); openTrade('${t.mint}','${escapeHtml(sym)}','buy')">⚡</button>
+    </div>`;
   }).join("");
 }
 
@@ -568,10 +706,9 @@ setInterval(()=>{
 function connectFeed(){
   if(state.ws){ try{ state.ws.close(); }catch(e){} }
   setFeedStatus("connecting","connecting");
-  statRpc.textContent = state.rpcWss.replace(/api-key=.*/,'api-key=•••').slice(0,28)+'…';
   let ws;
   try{
-    ws = new WebSocket(state.rpcWss);
+    ws = new WebSocket(DEFAULT_RPC_WSS);
   }catch(e){
     setFeedStatus("err","invalid url");
     return;
@@ -581,31 +718,56 @@ function connectFeed(){
   ws.onopen = ()=>{
     setFeedStatus("live","live");
     state.reconnectDelay = 4000;
+    state.debug.connectedAt = Date.now();
+    state.debug.lastError = null;
     ws.send(JSON.stringify({
       jsonrpc:"2.0", id:1, method:"logsSubscribe",
       params:[ {mentions:[PUMPFUN_PROGRAM]}, {commitment:"confirmed"} ]
     }));
+    updateDebugLine();
   };
 
   ws.onmessage = (ev)=>{
     let msg;
     try{ msg = JSON.parse(ev.data); }catch(e){ return; }
+    state.debug.msgCount++;
+
+    if(msg.id === 1 && msg.result !== undefined){
+      state.debug.subId = msg.result;
+      updateDebugLine();
+      return;
+    }
+    if(msg.error){
+      state.debug.lastError = JSON.stringify(msg.error);
+      updateDebugLine();
+      return;
+    }
+
     const logs = msg?.params?.result?.value?.logs;
     if(!logs) return;
+    state.debug.logMsgCount++;
+    state.debug.lastLogAt = Date.now();
+
     const isCreate = logs.some(l=> l.includes("Instruction: Create") || l.includes("Program log: Instruction: Create"));
-    if(!isCreate) return;
+    if(!isCreate){ updateDebugLine(); return; }
     const dataLine = logs.find(l=> l.startsWith("Program data:"));
-    if(!dataLine) return;
+    if(!dataLine){ updateDebugLine(); return; }
     const b64 = dataLine.replace("Program data:","").trim();
     let bytes;
-    try{ bytes = b64ToBytes(b64); }catch(e){ return; }
+    try{ bytes = b64ToBytes(b64); }catch(e){ updateDebugLine(); return; }
     const decoded = decodeCreateEvent(bytes);
     if(decoded && decoded.mint){
+      state.debug.createMsgCount++;
       pushToken(decoded);
     }
+    updateDebugLine();
   };
 
-  ws.onerror = ()=>{ setFeedStatus("err","error"); };
+  ws.onerror = ()=>{
+    setFeedStatus("err","error");
+    state.debug.lastError = "WebSocket error (lihat console browser buat detail)";
+    updateDebugLine();
+  };
   ws.onclose = ()=>{
     setFeedStatus("err",`disconnected — retry in ${Math.round(state.reconnectDelay/1000)}s`);
     setTimeout(connectFeed, state.reconnectDelay);
@@ -613,9 +775,26 @@ function connectFeed(){
   };
 }
 
+function updateDebugLine(){
+  const d = state.debug;
+  const el = document.getElementById("debugLine");
+  if(!el) return;
+  const connSecs = d.connectedAt ? Math.floor((Date.now()-d.connectedAt)/1000) : 0;
+  const lastLog = d.lastLogAt ? Math.floor((Date.now()-d.lastLogAt)/1000)+"s lalu" : "belum ada";
+  let html = `terhubung ${connSecs}s · pesan diterima: ${d.msgCount} · pesan log pump.fun: ${d.logMsgCount} · create terdeteksi: ${d.createMsgCount} · log terakhir: ${lastLog}`;
+  if(d.subId) html += ` · subscription #${d.subId}`;
+  if(d.lastError) html += `<br><span style="color:var(--red)">error: ${escapeHtml(d.lastError)}</span>`;
+  if(d.connectedAt && connSecs > 30 && d.logMsgCount === 0){
+    html += `<br><span style="color:var(--red)">⚠ udah ${connSecs}s konek tapi belum ada satu pun log dari program Pump.fun masuk — kemungkinan RPC ini lagi limit/bermasalah. Coba refresh halaman beberapa saat lagi.</span>`;
+  } else if(d.logMsgCount > 0 && d.createMsgCount === 0 && d.logMsgCount > 20){
+    html += `<br><span style="color:var(--purple)">log pump.fun masuk tapi belum ada yang ke-decode jadi token — kemungkinan format event-nya berubah, parsing perlu diupdate.</span>`;
+  }
+  el.innerHTML = html;
+}
+setInterval(updateDebugLine, 2000);
+
 // ---------- Phantom wallet ----------
 const walletBtn = document.getElementById("walletBtn");
-const statWallet = document.getElementById("statWallet");
 
 async function connectPhantom(){
   const provider = window?.solana;
@@ -629,7 +808,6 @@ async function connectPhantom(){
     state.wallet = resp.publicKey.toString();
     walletBtn.textContent = shortAddr(state.wallet);
     walletBtn.classList.add("connected");
-    statWallet.textContent = shortAddr(state.wallet);
     fetchBalance(state.wallet);
   }catch(e){
     console.error(e);
@@ -644,7 +822,7 @@ async function fetchBalance(pubkey){
     });
     const data = await res.json();
     const sol = (data?.result?.value || 0) / 1e9;
-    statWallet.textContent = `${shortAddr(pubkey)} · ${sol.toFixed(3)} SOL`;
+    walletBtn.textContent = `${shortAddr(pubkey)} · ${sol.toFixed(3)} SOL`;
   }catch(e){ /* ignore */ }
 }
 
@@ -654,7 +832,6 @@ walletBtn.addEventListener("click", ()=>{
     state.wallet = null;
     walletBtn.textContent = "Connect Phantom";
     walletBtn.classList.remove("connected");
-    statWallet.textContent = "belum connect";
   } else {
     connectPhantom();
   }
@@ -665,26 +842,8 @@ if(window.solana?.isPhantom){
     state.wallet = null;
     walletBtn.textContent = "Connect Phantom";
     walletBtn.classList.remove("connected");
-    statWallet.textContent = "belum connect";
   });
 }
-
-// ---------- Settings modal ----------
-const modalBg = document.getElementById("modalBg");
-document.getElementById("settingsBtn").onclick = ()=>{
-  document.getElementById("rpcInput").value = state.rpcWss;
-  modalBg.style.display = "flex";
-};
-document.getElementById("modalCancel").onclick = ()=> modalBg.style.display="none";
-document.getElementById("modalSave").onclick = ()=>{
-  const val = document.getElementById("rpcInput").value.trim();
-  if(val){
-    state.rpcWss = val;
-    localStorage.setItem("pt_rpc_wss", val);
-  }
-  modalBg.style.display = "none";
-  connectFeed();
-};
 
 document.getElementById("searchInput").addEventListener("input", renderTokens);
 document.getElementById("sortSelect").addEventListener("change", renderTokens);
@@ -843,6 +1002,22 @@ document.getElementById("tradeExecute").onclick = async ()=>{
     btn.disabled = false;
   }
 };
+
+// ---------- view toggle ----------
+const viewListBtn = document.getElementById("viewListBtn");
+const viewTabBtn = document.getElementById("viewTabBtn");
+const listViewEl = document.getElementById("listView");
+const tableViewEl = document.getElementById("tableView");
+function applyViewMode(){
+  const isList = state.viewMode === "list";
+  viewListBtn.classList.toggle("active", isList);
+  viewTabBtn.classList.toggle("active", !isList);
+  listViewEl.style.display = isList ? "block" : "none";
+  tableViewEl.style.display = isList ? "none" : "block";
+}
+viewListBtn.onclick = ()=>{ state.viewMode = "list"; localStorage.setItem("pt_view_mode","list"); applyViewMode(); renderTokens(); };
+viewTabBtn.onclick = ()=>{ state.viewMode = "table"; localStorage.setItem("pt_view_mode","table"); applyViewMode(); renderTokens(); };
+applyViewMode();
 
 // ---------- boot ----------
 statCount.textContent = state.tokens.length;
